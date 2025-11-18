@@ -4,7 +4,46 @@
 import os
 import sys
 from colorama import Fore, Back, Style, init
-from msvcrt import getch
+
+# Cross-platform getch implementation
+try:
+    from msvcrt import getch  # Windows
+    def get_key():
+        return ord(getch())
+except ImportError:
+    def get_key():  # Unix/Linux/macOS
+        import tty, termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+            if ch == '\x1b':  # ESC sequence for arrow keys
+                next_ch = sys.stdin.read(2)
+                if next_ch == '[A':  # Up arrow
+                    return 72  # Windows up arrow code
+                elif next_ch == '[B':  # Down arrow
+                    return 80  # Windows down arrow code
+                elif next_ch == '[C':  # Right arrow
+                    return 77
+                elif next_ch == '[D':  # Left arrow
+                    return 75
+                elif next_ch == '[H':  # Home
+                    return 71
+                elif next_ch == '[F':  # End
+                    return 79
+                else:
+                    return 27  # ESC
+            elif ch == '\r':
+                return 13  # Enter
+            elif ch == '\n':
+                return 10  # Line feed
+            elif ch == '\x03':  # Ctrl+C
+                return 3
+            else:
+                return ord(ch)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 class ECOLORS:
     HEADER = '\033[95m'
@@ -44,130 +83,64 @@ def up(curr, lst):
     else:
         return curr - 1
             
-def select(getin):
-    curr = 0
+def _menu_core(getin, multi=False):
+    if len(getin) == 0: return [] if multi else None
 
     t = type(getin)
+    lst = list(getin.keys()) if t is dict else list(getin) if t is set else getin
+    curr = 0
+    selected = [False] * len(lst) if multi else None
+    max_len = max(len(item) for item in lst) + (12 if multi else 1)
 
-    if t is dict: lst = list(getin.keys())
-    elif t is set: lst = list(getin)
-    else: lst = getin
-
-    max = 0
-    for item in lst:
-        length = len(item)
-        if length > max: max = length + 1
-
-    print()
     while True:
-        sys.stdout.write(max*'─')
-        sys.stdout.write('\n')
-        for index in range(len(lst)):
+        sys.stdout.write(max_len * '─' + '\n')
+        for idx, item in enumerate(lst):
             color = ''
-
-            if index == curr:
-                arrow = '→'
+            arrow = '→ ' if idx == curr else '  '
+            chosen = ''
+            if multi:
+                chosen = ' [√] ' if selected[idx] else ' [ ] '
+                color = ECOLORS.OKGREEN if selected[idx] else ''
+            if idx == curr:
                 color = ECOLORS.OKBLUE
+            sys.stdout.write(f"{color}{arrow}{chosen}{item} \n{Style.RESET_ALL}")
+        sys.stdout.write(max_len * '─' + '\n')
+
+        key_code = get_key()
+        
+        if key_code == 13 or key_code == 10:  # enter (CR or LF)
+            if multi:
+                res = []
+                for i, sel in enumerate(selected):
+                    if sel:
+                        res.append(lst[i] if t is set else getin[lst[i]])
+                if not res: continue
+                print()
+                return res
             else:
-                arrow = '  '
-                color = ''
-
-            sys.stdout.write(color + ' ' + arrow + ' ' + lst[index] + '  \n' + Style.RESET_ALL)
-
-        sys.stdout.write(max*'─')
-        sys.stdout.write('\n')
-
-        key = ord(getch())
-
-        if key == 13: #enter
-            print()
-            if t is dict: return getin[lst[curr]]
-            if t is set: return lst[curr]
-            else: return getin[curr]
-        elif key == 72: #up
+                print()
+                if t is dict: return getin[lst[curr]]
+                if t is set: return lst[curr]
+                return getin[curr]
+        elif multi and key_code == 32:  # space
+            selected[curr] = not selected[curr]
+        elif key_code == 72:  # up arrow
             curr = up(curr, lst)
-        elif key == 80: #down
+        elif key_code == 80:  # down arrow
             curr = down(curr, lst)
-        elif key == 71: #home
+        elif key_code == 71:  # home
             curr = 0
-        elif key == 79: #end
+        elif key_code == 79:  # end
             curr = len(lst) - 1
-        elif key == 27:  # esc
-            return None
-        elif key == 3:  # crtl + c
-            return None
-
+        elif key_code == 27 or key_code == 3:  # esc or ctrl+c
+            exit()
+            # return [] if multi else None
         sys.stdout.write('\x1b[{0}A'.format(len(lst) + 2))
 
-    print()
+def select(getin):
+    return _menu_core(getin, multi=False)
 
 def multi_select(getin):
-    if len(getin) == 0: return
-
-    curr = 0
-    t = type(getin)
-
-    if t is dict: lst = list(getin.keys())
-    elif t is set: lst = list(getin)
-    else: lst = getin
-
-    selected = [False] * len(lst)
-
-    max = 0
-    for item in lst:
-        length = len(item)
-        if length > max: max = length + 12
-
-    while True:
-        sys.stdout.write(max*'─')
-        sys.stdout.write('\n')
-        for index in range(len(lst)):
-            color = ''
-
-            if selected[index] is True:
-                chosen = ' [√] '
-                color = ECOLORS.OKGREEN
-            else: chosen = ' [ ] '
-
-            if index == curr:
-                arrow = '→'
-                color = ECOLORS.OKBLUE
-            else: arrow = '  '
-
-            sys.stdout.write(color + arrow + chosen + lst[index] + ' \n' + Style.RESET_ALL)
-
-        sys.stdout.write(max*'─')
-        sys.stdout.write('\n')
-
-        key = ord(getch())
-
-        if key == 13:  # enter
-            res = []
-            # selected[curr] = True
-            for i in range(0, len(selected)):
-                if selected[i] is True:
-                    if t is set: res.append(lst[i])
-                    else: res.append(getin[lst[i]])
-
-            if res == []: continue
-
-            print()
-            return res
-        elif key == 32: # space
-            selected[curr] = not selected[curr]
-        elif key == 72:  # up
-            curr = up(curr, lst)
-        elif key == 80:  # down
-            curr = down(curr, lst)
-        elif key == 71:  # home
-            curr = 0
-        elif key == 79:  # end
-            curr = len(lst) - 1
-        elif key == 27:  # esc
-            return []
-        elif key == 3:  # crtl + c
-            return []
-
-        sys.stdout.write('\x1b[{0}A'.format(len(lst) + 2))
+    return _menu_core(getin, multi=True)
 
 init()
