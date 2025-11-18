@@ -19,37 +19,33 @@ class Task:
 
     def set_tm(self, tm):
         if self.tm is not None:
-            exit(1) # not allowed
-
+            exit(1)
         self.tm = tm
-        
         if len(self.title) > self.tm.title_max_length:
             self.tm.title_max_length = len(self.title)
 
     def __call__(self, **kwargs):
         if self.stop_on_error and self.tm.is_error_occurred:
             return
-
         start = time.process_time()
         res = 0
-        
-        if (isinstance(self.cmd, str)) : res = os.system(self.cmd)
-        else: res = self.cmd(**kwargs)
-        
+        if isinstance(self.cmd, str):
+            res = os.system(self.cmd)
+        else:
+            res = self.cmd(**kwargs)
         took = time.process_time() - start
-
         msg = 'success'
         color = ECOLORS.OKGREEN
-
         if res != 0:
             msg = 'fail'
             color = ECOLORS.WARNING
-
             if self.stop_on_error:
                 self.tm.is_error_occurred = True
-
-        self.tm.logs.append(color + '[' + self.title + ']' + (self.tm.title_max_length - len(self.title) + 1) * ' ' + msg + ' ' * 4 + '[' + str(took) + '] seconds took')
-
+        self.tm.logs.append(
+            color + '[' + self.title + ']' +
+            (self.tm.title_max_length - len(self.title) + 1) * ' ' +
+            msg + ' ' * 4 + '[' + str(took) + '] seconds took'
+        )
         return res
 
     def __str__(self):
@@ -66,8 +62,8 @@ class MultiTask:
         self.tasks = tasks
 
     def set_tm(self, tm):
-        if self.tm is not None: exit(1) # not allowed
-
+        if self.tm is not None:
+            exit(1)
         for task in self.tasks:
             task.set_tm(tm)
 
@@ -79,7 +75,6 @@ class MultiTask:
             res = task(**kwargs)
             if res != 0:
                 return res
-
         return 0
 
 class TaskManager:
@@ -102,6 +97,38 @@ class TaskManager:
     def set_only_once(self):
         self.only_once = True
 
+    def run_tasks(self, select_func, **kwargs):
+        res = 0
+        while True:
+            sys.stdout.write(Style.RESET_ALL)
+            self.logs = []
+            self.is_error_occurred = False
+
+            tasks = select_func(self.list)
+            if not tasks or (isinstance(tasks, list) and len(tasks) == 0):
+                break
+
+            if not isinstance(tasks, list):
+                tasks = [tasks]
+
+            start = time.process_time()
+
+            for task in tasks:
+                res = task(**kwargs)
+                if res != 0:
+                    return res
+
+            print()
+            for log in self.logs:
+                sys.stdout.write(log)
+                print()
+            print()
+
+            if self.only_once:
+                break
+
+        return res
+
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         print('task manager call')
 
@@ -110,33 +137,7 @@ class SingleTaskManager(TaskManager):
         super().__init__()
 
     def __call__(self, **kwargs):
-        res = 0
-        while True:
-            sys.stdout.write(Style.RESET_ALL)
-            self.logs = []
-            self.is_error_occurred = False
-
-            task = select(self.list)
-
-            if task is None:
-                break
-
-            start = time.process_time()
-
-            res = task(**kwargs)
-
-            print()
-
-            for log in self.logs:
-                sys.stdout.write(log)
-                print()
-
-            print()
-
-            if self.only_once:
-                break
-
-        return res
+        return self.run_tasks(select, **kwargs)
 
 class MultiTaskManager(TaskManager):
     title = ''
@@ -148,56 +149,14 @@ class MultiTaskManager(TaskManager):
         self.title = title
 
     def __call__(self, **kwargs):
-        res = 0
-        while True:
-            sys.stdout.write(Style.RESET_ALL)
-            self.logs = []
-            self.is_error_occurred = False
-
-            tasks = multi_select(self.list)
-
-            if len(tasks) == 0:
-                break
-
-            expanded_tasks = []
-
-            start = time.process_time()
-
-            for task in tasks:
-                try:
-                    if isinstance(task, MultiTaskManager):
-                        for expanded in task.expand():
-                            expanded_tasks.append(expanded)
-                    else:
-                        expanded_tasks.append(task)
-                except:
-                    None
-
-            for task in expanded_tasks:
-                res = task(**kwargs)
-                if (res != 0):
-                    return res
-
-            print()
-
-            for log in self.logs:
-                sys.stdout.write(log)
-                print()
-
-            print()
-
-            if self.only_once:
-                break
-
-        return res
+        return self.run_tasks(multi_select, **kwargs)
 
     def expand(self):
         if not self.is_expanded:
             self.chosen = multi_select(self.list)
         else:
             self.is_expanded = True
-
         return self.chosen
 
     def set_tm(self, tm):
-        None
+        pass
