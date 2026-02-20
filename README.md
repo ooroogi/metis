@@ -1,4 +1,14 @@
-# metis
-Work automation using python script.
+# Metis
 
-![alt text](https://github.com/ooroogi/metis/blob/main/readme/sample.png)
+https://github.com/ooroogi/metis
+
+## Prepare (run once)
+
+windows - python  metis.py
+mac     - python3 metis.py
+
+## How to Use
+
+in terminal, run:
+
+- metis
